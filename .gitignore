@@ -1,4 +1,8 @@
 /.vscode
 ex.out
 statistic10.dat
-*.ascii 
+*.ascii
+*.o
+ssd
+parameters_name.txt
+parameters_value.txt

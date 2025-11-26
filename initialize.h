@@ -192,6 +192,12 @@ struct ssd_info{
     unsigned int request_queue_length;
     unsigned int update_read_count;      //记录因为更新操作导致的额外读出操作
 
+    /* ECC Statistics - tracks read retries and soft decision decodings due to BER */
+    unsigned long ecc_read_normal_count;      //reads with no ECC overhead (low BER)
+    unsigned long ecc_read_retry_count;       //reads requiring single retry (medium BER)  
+    unsigned long ecc_soft_decision_count;    //reads requiring soft decision (high BER)
+    int64_t ecc_total_latency_overhead;       //total additional latency from ECC operations
+
     char parameterfilename[30];
     char tracefilename[30];
     char outputfilename[30];

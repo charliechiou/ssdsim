@@ -17,6 +17,7 @@ Hao Luo         2011/01/01        2.0           Change               luohao13568
  *****************************************************************************************************************************/
 
 #include "flash.h"
+#include "ecc.h"
 
 /**********************
  *这个函数只作用于写请求
@@ -3478,16 +3479,54 @@ Status go_one_step(struct ssd_info * ssd, struct sub_request * sub1,struct sub_r
                     /*****************************************************************************************************
                      *这个目标状态是指flash处于读数据的状态，sub的下一状态就应该是传送数据SR_R_DATA_TRANSFER
                      *这时与channel无关，只与chip有关所以要修改chip的状态为CHIP_READ_BUSY，下一个状态就是CHIP_DATA_TRANSFER
+                     *
+                     * ECC Simulation: As P/E cycles increase, BER increases, causing read latency penalties
+                     * The ECC overhead simulates "Read Retry" or "Soft Decision" decoding
                      ******************************************************************************************************/
+                    int64_t total_read_time;
+                    int64_t base_read_time = ssd->parameter->time_characteristics.tR;
+                    int64_t ecc_overhead;
+                    unsigned int erase_count;
+                    unsigned int max_pe_cycles;
+                    double ber;
+                    int ecc_type;
+                    
+                    /* Get the block's erase count for ECC calculation */
+                    erase_count = ssd->channel_head[location->channel].chip_head[location->chip]
+                                    .die_head[location->die].plane_head[location->plane]
+                                    .blk_head[location->block].erase_count;
+                    
+                    /* Get the maximum P/E cycles from chip parameters */
+                    max_pe_cycles = ssd->channel_head[location->channel].chip_head[location->chip].ers_limit;
+                    if (max_pe_cycles == 0) {
+                        max_pe_cycles = ECC_MAX_PE_CYCLES;
+                    }
+                    
+                    /* Calculate BER and ECC latency */
+                    ber = calculate_ber(erase_count, max_pe_cycles);
+                    ecc_overhead = calculate_ecc_read_latency(ber);
+                    ecc_type = get_ecc_operation_type(ber);
+                    total_read_time = base_read_time + ecc_overhead;
+                    
+                    /* Update ECC statistics */
+                    if (ecc_type == ECC_READ_NORMAL) {
+                        ssd->ecc_read_normal_count++;
+                    } else if (ecc_type == ECC_READ_RETRY) {
+                        ssd->ecc_read_retry_count++;
+                    } else {
+                        ssd->ecc_soft_decision_count++;
+                    }
+                    ssd->ecc_total_latency_overhead += ecc_overhead;
+                    
                     sub->current_time=ssd->current_time;
                     sub->current_state=SR_R_READ;
                     sub->next_state=SR_R_DATA_TRANSFER;
-                    sub->next_state_predict_time=ssd->current_time+ssd->parameter->time_characteristics.tR;
+                    sub->next_state_predict_time=ssd->current_time+total_read_time;
 
                     ssd->channel_head[location->channel].chip_head[location->chip].current_state=CHIP_READ_BUSY;
                     ssd->channel_head[location->channel].chip_head[location->chip].current_time=ssd->current_time;
                     ssd->channel_head[location->channel].chip_head[location->chip].next_state=CHIP_DATA_TRANSFER;
-                    ssd->channel_head[location->channel].chip_head[location->chip].next_state_predict_time=ssd->current_time+ssd->parameter->time_characteristics.tR;
+                    ssd->channel_head[location->channel].chip_head[location->chip].next_state_predict_time=ssd->current_time+total_read_time;
 
                     break;
                 }
