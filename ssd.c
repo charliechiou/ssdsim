@@ -1053,11 +1053,18 @@ struct ssd_info *make_aged(struct ssd_info *ssd)
 {
     unsigned int i,j,k,l,m,n,ppn;
     int threshould,flag=0;
+    unsigned int aged_erase_count;
 
     if (ssd->parameter->aged==1)
     {
         //threshold表示一个plane中有多少页需要提前置为失效
         threshould=(int)(ssd->parameter->block_plane*ssd->parameter->page_block*ssd->parameter->aged_ratio);  
+        
+        /* Calculate simulated erase count based on aged_ratio and ers_limit
+         * This simulates wear on blocks proportional to how "aged" the SSD is
+         * For example, aged_ratio=0.7 means 70% of lifetime used, so erase_count = 0.7 * ers_limit */
+        aged_erase_count = (unsigned int)(ssd->parameter->aged_ratio * ssd->parameter->ers_limit);
+        
         for (i=0;i<ssd->parameter->channel_number;i++)
             for (j=0;j<ssd->parameter->chip_channel[i];j++)
                 for (k=0;k<ssd->parameter->die_chip;k++)
@@ -1066,9 +1073,13 @@ struct ssd_info *make_aged(struct ssd_info *ssd)
                         flag=0;
                         for (m=0;m<ssd->parameter->block_plane;m++)
                         {  
+                            /* Simulate block wear by setting erase_count based on aged_ratio
+                             * This enables ECC simulation to apply appropriate read latency penalties */
+                            ssd->channel_head[i].chip_head[j].die_head[k].plane_head[l].blk_head[m].erase_count = aged_erase_count;
+                            
                             if (flag>=threshould)
                             {
-                                break;
+                                continue;  /* Still set erase_count for all blocks, but skip invalid page marking */
                             }
                             for (n=0;n<(ssd->parameter->page_block*ssd->parameter->aged_ratio+1);n++)
                             {  
