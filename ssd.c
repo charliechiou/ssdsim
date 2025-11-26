@@ -758,6 +758,8 @@ void statistic_output(struct ssd_info *ssd)
 {
     unsigned int lpn_count=0,i,j,k,m,erase=0,plane_erase=0;
     double gc_energy=0.0;
+    unsigned long ecc_retry_total;
+    int64_t ecc_avg_overhead;
 #ifdef DEBUG
     printf("enter statistic_output,  current time:%lld\n",ssd->current_time);
 #endif
@@ -822,10 +824,14 @@ void statistic_output(struct ssd_info *ssd)
     fprintf(ssd->outputfile,"ECC normal reads (no retry): %13lu\n",ssd->ecc_read_normal_count);
     fprintf(ssd->outputfile,"ECC read retry count: %13lu\n",ssd->ecc_read_retry_count);
     fprintf(ssd->outputfile,"ECC soft decision count: %13lu\n",ssd->ecc_soft_decision_count);
-    fprintf(ssd->outputfile,"ECC total latency overhead (ns): %lld\n",ssd->ecc_total_latency_overhead);
-    if (ssd->ecc_read_retry_count + ssd->ecc_soft_decision_count > 0) {
-        fprintf(ssd->outputfile,"ECC avg overhead per retry (ns): %lld\n",
-                ssd->ecc_total_latency_overhead / (ssd->ecc_read_retry_count + ssd->ecc_soft_decision_count));
+    fprintf(ssd->outputfile,"ECC total latency overhead (ns): %ld\n",(long)ssd->ecc_total_latency_overhead);
+    
+    /* Calculate ECC average overhead once for both output files */
+    ecc_retry_total = ssd->ecc_read_retry_count + ssd->ecc_soft_decision_count;
+    ecc_avg_overhead = 0;
+    if (ecc_retry_total > 0) {
+        ecc_avg_overhead = ssd->ecc_total_latency_overhead / (int64_t)ecc_retry_total;
+        fprintf(ssd->outputfile,"ECC avg overhead per retry (ns): %ld\n",(long)ecc_avg_overhead);
     }
     fflush(ssd->outputfile);
 
@@ -872,10 +878,9 @@ void statistic_output(struct ssd_info *ssd)
     fprintf(ssd->statisticfile,"ECC normal reads (no retry): %13lu\n",ssd->ecc_read_normal_count);
     fprintf(ssd->statisticfile,"ECC read retry count: %13lu\n",ssd->ecc_read_retry_count);
     fprintf(ssd->statisticfile,"ECC soft decision count: %13lu\n",ssd->ecc_soft_decision_count);
-    fprintf(ssd->statisticfile,"ECC total latency overhead (ns): %lld\n",ssd->ecc_total_latency_overhead);
-    if (ssd->ecc_read_retry_count + ssd->ecc_soft_decision_count > 0) {
-        fprintf(ssd->statisticfile,"ECC avg overhead per retry (ns): %lld\n",
-                ssd->ecc_total_latency_overhead / (ssd->ecc_read_retry_count + ssd->ecc_soft_decision_count));
+    fprintf(ssd->statisticfile,"ECC total latency overhead (ns): %ld\n",(long)ssd->ecc_total_latency_overhead);
+    if (ecc_retry_total > 0) {
+        fprintf(ssd->statisticfile,"ECC avg overhead per retry (ns): %ld\n",(long)ecc_avg_overhead);
     }
     fflush(ssd->statisticfile);
 

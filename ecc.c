@@ -78,8 +78,13 @@ int64_t calculate_ecc_read_latency(double ber)
     else {
         /* Multiple retries + soft decision decoding required */
         /* Calculate number of retries based on BER severity */
-        int num_retries = 2 + (int)((ber - ECC_MULTI_RETRY_THRESHOLD) / 
-                                     (ECC_MAX_BER - ECC_MULTI_RETRY_THRESHOLD) * 3);
+        int num_retries = 2;
+        double ber_range = ECC_MAX_BER - ECC_MULTI_RETRY_THRESHOLD;
+        
+        /* Guard against division by zero if thresholds are misconfigured */
+        if (ber_range > 0) {
+            num_retries = 2 + (int)((ber - ECC_MULTI_RETRY_THRESHOLD) / ber_range * 3);
+        }
         
         /* Cap maximum retries */
         if (num_retries > 5) {
