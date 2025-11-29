@@ -41,6 +41,43 @@ int  main()
     memset(ssd,0, sizeof(struct ssd_info));
 
     ssd=initiation(ssd);
+
+// // ================== [TEST START] ==================
+//     printf("\n[DEBUG] Checking Process Variation Initialization...\n");
+    
+//     unsigned int test_ch = 0, test_chip = 0, test_die = 0, test_plane = 0;
+//     struct blk_info *b_ptr;
+//     double min_wd = 100.0, max_wd = 0.0, sum_wd = 0.0;
+//     int sample_count = 0;
+
+//     // 1. 遍歷 Channel 0 的所有 Block 計算統計數據
+//     for (int blk = 0; blk < ssd->parameter->block_plane; blk++) {
+//         b_ptr = &(ssd->channel_head[test_ch].chip_head[test_chip].die_head[test_die].plane_head[test_plane].blk_head[blk]);
+        
+//         // 統計 WD 分佈
+//         if (b_ptr->wearing_degree < min_wd) min_wd = b_ptr->wearing_degree;
+//         if (b_ptr->wearing_degree > max_wd) max_wd = b_ptr->wearing_degree;
+//         sum_wd += b_ptr->wearing_degree;
+//         sample_count++;
+
+//         // 2. 印出前 10 個 Block 的詳細資訊看看
+//         if (blk < 10) {
+//             printf("Block %d: WD=%.4f, Rank=%d, Region=%d, MaxFault=%d\n", 
+//                    blk, 
+//                    b_ptr->wearing_degree, 
+//                    b_ptr->refresh_rank, 
+//                    b_ptr->region_type,
+//                    b_ptr->max_faulty_bit_count);
+//         }
+//     }
+
+//     printf("\n[DEBUG] Statistics for %d blocks:\n", sample_count);
+//     printf("Min WD: %.4f (Expected ~0.41 for 24k P/E)\n", min_wd);
+//     printf("Max WD: %.4f (Expected ~0.66 for 15k P/E)\n", max_wd);
+//     printf("Avg WD: %.4f (Expected ~0.51)\n", sum_wd / sample_count);
+    
+//     // ================== [TEST END] ==================
+
     make_aged(ssd);
     pre_process_page(ssd);
 
