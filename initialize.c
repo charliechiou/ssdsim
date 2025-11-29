@@ -19,6 +19,7 @@ Hao Luo         2011/01/01        2.0           Change               luohao13568
 #define _CRTDBG_MAP_ALLOC
 
 #include <stdlib.h>
+#include <math.h> // For randomization the initialization of blocks
 #include "initialize.h"
 
 #define FALSE		0
@@ -212,6 +213,28 @@ struct page_info * initialize_page(struct page_info * p_page )
     return p_page;
 }
 
+double get_process_variation_pe() {
+    // 這裡使用 Box-Muller 轉換產生標準常態分佈 (Standard Normal Distribution)
+    double u1 = (double)rand() / RAND_MAX;
+    double u2 = (double)rand() / RAND_MAX;
+    
+    // 避免 log(0)
+    if (u1 < 1e-9) u1 = 1e-9;
+    
+    double z0 = sqrt(-2.0 * log(u1)) * cos(2.0 * 3.1415926 * u2);
+    
+    // 假設平均值為 19500 (15000與24000的中間值)，標準差取 1500 (約 3-sigma 涵蓋範圍)
+    // 註：論文 [cite: 380] 提到 mean=8524, std=1318 是針對特定實驗，
+    // 但  模擬時設定範圍是 [15000, 24000]。這裡以範圍為主。
+    double real_pe = 19500.0 + z0 * 1500.0;
+    
+    // 邊界檢查，確保落在論文提到的範圍內
+    if (real_pe < 15000.0) real_pe = 15000.0;
+    if (real_pe > 24000.0) real_pe = 24000.0;
+    
+    return real_pe;
+}
+
 struct blk_info * initialize_block(struct blk_info * p_block,struct parameter_value *parameter)
 {
     unsigned int i;
@@ -219,6 +242,24 @@ struct blk_info * initialize_block(struct blk_info * p_block,struct parameter_va
 
     p_block->free_page_num = parameter->page_block;	// all pages are free
     p_block->last_write_page = -1;	// no page has been programmed
+
+    // ----- PV init -----
+
+    // WD = (Spec P/E) / (Real P/E)
+    double spec_pe = 10000.0;
+    double real_pe = get_process_variation_pe();
+    p_block->wearing_degree = spec_pe / real_pe;
+
+    // 論文 ：初始時所有 Block 都視為能支援最長 Retention Time (Rank 1/Rank 0)
+    p_block->refresh_rank = 0; // 0 代表 Rank 1 (最強等級)
+
+    // 初始化 Max Faulty Bit Count
+    p_block->max_faulty_bit_count = 0;
+
+    // 論文 ：初始時所有資料都視為 Infrequent-updated，放在 Cold Region
+    p_block->region_type = 0; // 0: Cold, 1: Warm, 2: Hot
+
+    // -------------------
 
     p_block->page_head = (struct page_info *)malloc(parameter->page_block * sizeof(struct page_info));
     alloc_assert(p_block->page_head,"p_block->page_head");
