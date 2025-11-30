@@ -18,6 +18,54 @@ Hao Luo         2011/01/01        2.0           Change               luohao13568
 
 #include "flash.h"
 
+#include <math.h>
+// 1 day = 24 * 3600 * 10^9 ns
+#define TIME_ONE_DAY_NS 86400000000000ll
+
+/*****************************************************************************
+ * calculate_faulty_bits
+ * 依據論文公式 (1)(2)(3) 計算 Block 在當前時間點的錯誤位元數
+ * Paper: "Minimizing Retention Induced Refresh...", Section 5.1.1
+ *****************************************************************************/
+unsigned int calculate_faulty_bits(struct ssd_info *ssd, struct blk_info *p_block) {
+    
+    // 1. 計算 Retention Time (d), 單位: 天
+    int64_t current_time = ssd->current_time;
+    int64_t retention_duration = current_time - p_block->last_write_time;
+    
+    // 防止時間倒流或剛初始化的狀況
+    if (retention_duration <= 0) return 0;
+
+    double d_days = (double)retention_duration / TIME_ONE_DAY_NS;
+
+    // 2. 計算有效磨損 (c), 單位: 次 [cite: 724]
+    // c = P/E cycles * Wearing Degree
+    // erase_count 是目前的擦除次數
+    double c_effective = (double)p_block->erase_count * p_block->wearing_degree;
+    
+    // 避免 c 為 0 導致數學錯誤 (新 Block)
+    if (c_effective < 1.0) c_effective = 1.0;
+
+    // 3. 計算錯誤率增長率 dr(c) [cite: 713]
+    // dr(c) = 10^-13 * c^1.71
+    double dr = 1e-13 * pow(c_effective, 1.71);
+
+    // 4. 計算 RBER (Raw Bit Error Rate) [cite: 712]
+    // RBER = dr * d
+    double rber = dr * d_days;
+
+    // 5. 轉換為 Faulty Bits Count
+    // 論文 [cite: 504] 提到 "errors are random occurred"
+    // 這裡我們先回傳期望值 (Expected Value)。
+    // 若要更真實，可以引入 Poisson Distribution 或簡單的隨機波動。
+    unsigned int page_size_bytes = ssd->parameter->page_capacity;
+    unsigned int page_size_bits = page_size_bytes * 8;
+    
+    unsigned int faulty_bits = (unsigned int)(rber * page_size_bits);
+
+    return faulty_bits;
+}
+
 /**********************
  *这个函数只作用于写请求
  ***********************/
@@ -565,6 +613,14 @@ Status  find_active_block(struct ssd_info *ssd,unsigned int channel,unsigned int
 Status write_page(struct ssd_info *ssd,unsigned int channel,unsigned int chip,unsigned int die,unsigned int plane,unsigned int active_block,unsigned int *ppn)
 {
     int last_write_page=0;
+
+    // 如果這是該 Block 被擦除後寫入的第一個 Page (last_write_page 為 -1)
+    // 我們將當前時間標記為該 Block 的 "起始時間"
+    if (ssd->channel_head[channel].chip_head[chip].die_head[die].plane_head[plane].blk_head[active_block].last_write_page == -1) 
+    {
+        ssd->channel_head[channel].chip_head[chip].die_head[die].plane_head[plane].blk_head[active_block].last_write_time = ssd->current_time;
+    }
+
     last_write_page=++(ssd->channel_head[channel].chip_head[chip].die_head[die].plane_head[plane].blk_head[active_block].last_write_page);	
     if(last_write_page>=(int)(ssd->parameter->page_block))
     {

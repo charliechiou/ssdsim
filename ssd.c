@@ -94,6 +94,62 @@ int  main()
     fprintf(ssd->outputfile,"\t\t\t\t\t\t\t\t\tOUTPUT\n");
     fprintf(ssd->outputfile,"****************** TRACE INFO ******************\n");
 
+    // // ================= [Retention Model Self-Check START] =================
+    // printf("\n[DEBUG] Testing Retention Error Model...\n");
+
+    // // 1. 挑選 Channel 0, Chip 0, Die 0, Plane 0 的第 0 個 Block 來測試
+    // struct blk_info *test_blk = &(ssd->channel_head[0].chip_head[0].die_head[0].plane_head[0].blk_head[0]);
+
+    // // 2. [模擬情境 A]：新 Block (低磨損)，放置時間短 (1天)
+    // test_blk->erase_count = 10;          // 幾乎全新的 Block
+    // test_blk->wearing_degree = 1.0;      // 標準體質
+    // test_blk->last_write_time = 0;       // 在時間點 0 寫入
+    // ssd->current_time = 86400000000000ll; // 模擬經過 1 天 (單位 ns)
+    
+    // unsigned int faults_new = calculate_faulty_bits(ssd, test_blk);
+    // printf("Case A (New Block, 1 Day): Faults = %d (Expected: ~0)\n", faults_new);
+
+    // // 3. [模擬情境 B]：老舊 Block (高磨損)，放置時間長 (1年)
+    // test_blk->erase_count = 10000;       // 已經擦寫 1萬次 (接近壽命極限)
+    // test_blk->wearing_degree = 1.2;      // 體質較差 (WD > 1)
+    // test_blk->last_write_time = 0;       // 在時間點 0 寫入
+    
+    // // 模擬經過 1 年 (365 天)
+    // // 1 Day = 86400000000000 ns
+    // ssd->current_time = 365 * 86400000000000ll; 
+    
+    // unsigned int faults_old = calculate_faulty_bits(ssd, test_blk);
+    
+    // // 根據公式估算：
+    // // c = 10000 * 1.2 = 12000
+    // // dr = 1e-13 * 12000^1.71 ≈ 1e-13 * 947596 ≈ 9.47e-8
+    // // RBER = 9.47e-8 * 365 ≈ 3.45e-5
+    // // Bits = 3.45e-5 * 32768 (4KB*8) ≈ 1.13 bits
+    // // (數值可能會因為您的 Page Size 設定而不同，重點是必須 > 0)
+    // printf("Case B (Old Block, 1 Year): Faults = %d (Expected: > 0)\n", faults_old);
+
+    // // 4. [模擬情境 C]：測試 Rank 調整邏輯
+    // // 強制設定錯誤數很高，看看 Rank 會不會變
+    // test_blk->refresh_rank = 0; // 初始 Rank 1
+    // test_blk->max_faulty_bit_count = 0;
+    
+    // // 我們欺騙 update 函數，讓它以為計算出來的錯誤是 50 (超過閾值 40)
+    // // 這裡我們暫時手動模擬 update_block_refresh_rank 的行為來測試
+    // if (faults_old < 50) faults_old = 50; // 強制注入錯誤
+    // test_blk->max_faulty_bit_count = faults_old;
+
+    // printf("Testing Rank Update with %d faults...\n", faults_old);
+    // if (test_blk->max_faulty_bit_count > 40) { // 假設閾值是 40
+    //     test_blk->refresh_rank++;
+    //     printf("Result: Rank Demoted to %d (Success!)\n", test_blk->refresh_rank);
+    // } else {
+    //     printf("Result: Rank Unchanged (Fail if faults > threshold)\n");
+    // }
+
+    // // 重置時間以免影響後面的 simulate
+    // ssd->current_time = 0;
+    // // ================= [Retention Model Self-Check END] =================
+
     ssd=simulate(ssd);
     statistic_output(ssd);  
     /*	free_all_node(ssd);*/

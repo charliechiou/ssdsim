@@ -292,6 +292,8 @@ struct blk_info
     unsigned int max_faulty_bit_count;      // For Retention Time Detection (RTD)
 
     int region_type;                        // Cold Region, Warm Region, Hot Region
+
+    int64_t last_write_time;
 };
 
 struct page_info
