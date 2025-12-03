@@ -120,6 +120,7 @@ struct ssd_info *initiation(struct ssd_info *ssd)
     memset(ssd->channel_head,0,ssd->parameter->channel_number * sizeof(struct channel_info));
     initialize_channels(ssd );
 
+    ssd->next_refresh_check_time = 0;
 
     printf("\n");
     ssd->outputfile=fopen(ssd->outputfilename,"w");

@@ -22,6 +22,14 @@ Hao Luo         2011/01/01        2.0           Change               luohao13568
 // 1 day = 24 * 3600 * 10^9 ns
 #define TIME_ONE_DAY_NS 86400000000000ll
 
+// 定義不同 Rank 對應的 Refresh 週期 (參考論文 Fig. 10 [cite: 760-771])
+// 這裡簡化為幾種等級 (單位: ns)
+#define RETENTION_3_YEAR  (3LL * 365 * 24 * 3600 * 1000000000LL)
+#define RETENTION_1_YEAR  (1LL * 365 * 24 * 3600 * 1000000000LL)
+#define RETENTION_3_MONTH (90LL * 24 * 3600 * 1000000000LL)
+#define RETENTION_3_WEEK  (21LL * 24 * 3600 * 1000000000LL)
+#define RETENTION_3_DAY   (3LL * 24 * 3600 * 1000000000LL)
+
 /*****************************************************************************
  * calculate_faulty_bits
  * 依據論文公式 (1)(2)(3) 計算 Block 在當前時間點的錯誤位元數
@@ -64,6 +72,113 @@ unsigned int calculate_faulty_bits(struct ssd_info *ssd, struct blk_info *p_bloc
     unsigned int faulty_bits = (unsigned int)(rber * page_size_bits);
 
     return faulty_bits;
+}
+
+// 定義閾值 (根據論文或 ECC 能力設定)
+// 假設 ECC 可修正 60 bits，我們設閾值為 40 和 10
+#define ECC_THRESHOLD_HR  40  // [cite: 455] hr: 上限閾值
+#define ECC_THRESHOLD_HL  10  // [cite: 455] hl: 下限閾值
+#define MAX_REFRESH_RANK  10  // 假設有 10 個等級
+
+/*****************************************************************************
+ * update_block_refresh_rank
+ * 執行 Retention Time Detection (RTD) [cite: 440, 450]
+ * 在 Refresh 操作時呼叫此函式，根據錯誤位元數調整 Block 的 Refresh Rank
+ *****************************************************************************/
+void update_block_refresh_rank(struct ssd_info *ssd, struct blk_info *p_block) {
+    
+    // 1. 計算目前的錯誤位元數 (模擬讀取後的偵測)
+    unsigned int current_faulty_bits = calculate_faulty_bits(ssd, p_block);
+    
+    // 記錄最大錯誤數 (論文 Fig. 6b) [cite: 454]
+    if (current_faulty_bits > p_block->max_faulty_bit_count) {
+        p_block->max_faulty_bit_count = current_faulty_bits;
+    }
+
+    // 2. 比較閾值並調整 Rank (論文 Fig. 6c) [cite: 456-458]
+    if (p_block->max_faulty_bit_count > ECC_THRESHOLD_HR) {
+        // 錯誤率過高 -> 降級 (縮短 Refresh 週期)
+        if (p_block->refresh_rank < MAX_REFRESH_RANK) {
+            p_block->refresh_rank++;
+            // 降級後，重置錯誤計數，因為我們會用更頻繁的週期來保護它
+            p_block->max_faulty_bit_count = 0; 
+            printf("Block demoted to Rank %d (Faults: %d)\n", p_block->refresh_rank, current_faulty_bits);
+        } else {
+            // 已經是最低等級還出錯 -> 標記為 Bad Block 或其他處理 [cite: 472]
+        }
+    } 
+    else if (p_block->max_faulty_bit_count < ECC_THRESHOLD_HL) {
+        // 錯誤率很低 -> 升級 (延長 Refresh 週期)
+        if (p_block->refresh_rank > 0) {
+            p_block->refresh_rank--;
+            p_block->max_faulty_bit_count = 0;
+            printf("Block promoted to Rank %d (Faults: %d)\n", p_block->refresh_rank, current_faulty_bits);
+        }
+    }
+    // 否則保持原 Rank [cite: 458]
+}
+
+// 根據 Rank 取得該 Block 應有的 Retention Time
+int64_t get_retention_limit(int rank) {
+    switch(rank) {
+        case 0: return RETENTION_3_YEAR;
+        case 1: return RETENTION_1_YEAR;
+        case 2: return RETENTION_3_MONTH;
+        case 3: return RETENTION_3_WEEK;
+        default: return RETENTION_3_DAY; // 最差情況
+    }
+}
+
+// 執行全域 Refresh 檢查
+void check_and_perform_refresh(struct ssd_info *ssd) {
+    unsigned int i, j, k, m, n;
+    struct blk_info *p_block;
+    int64_t current_time = ssd->current_time;
+    int64_t time_elapsed;
+    int64_t limit;
+
+    // 遍歷所有 Channel/Chip/Die/Plane/Block
+    // 注意：這在模擬器中比較耗時，真實硬體是用 Queue 實作 [cite: 521-524]
+    // 這裡為了簡化實作，直接暴力掃描
+    for (i = 0; i < ssd->parameter->channel_number; i++) {
+        for (j = 0; j < ssd->parameter->chip_channel[0]; j++) {
+            for (k = 0; k < ssd->parameter->die_chip; k++) {
+                for (m = 0; m < ssd->parameter->plane_die; m++) {
+                    for (n = 0; n < ssd->parameter->block_plane; n++) {
+                        
+                        p_block = &(ssd->channel_head[i].chip_head[j].die_head[k].plane_head[m].blk_head[n]);
+                        
+                        // 1. 如果 Block 是空的或無效的，跳過
+                        if (p_block->last_write_page == -1) continue;
+
+                        // 2. 計算已經放置多久了
+                        time_elapsed = current_time - p_block->last_write_time;
+                        
+                        // 3. 取得該 Block 當前 Rank 允許的最大時間
+                        limit = get_retention_limit(p_block->refresh_rank);
+
+                        printf("Time epapsed: %lld; Limit time %lld\n",time_elapsed, limit);
+
+                        // 4. 如果超過時間，觸發 Refresh 與 Detect [cite: 456]
+                        if (time_elapsed >= limit) {
+                            
+                            printf("[Refresh Triggered] Channel %d, Chip %d, Block %d (Rank: %d, Elapsed: %lld ns)\n", 
+                                   i, j, n, p_block->refresh_rank, time_elapsed);
+
+                            // 呼叫我們之前寫好的 Rank 調整函式
+                            update_block_refresh_rank(ssd, p_block);
+                            
+                            // 模擬 Refresh 動作：重置寫入時間 (視為資料已搬移/重寫)
+                            p_block->last_write_time = current_time;
+                            
+                            // 增加統計數據 (可選)
+                            // ssd->refresh_count++; 
+                        }
+                    }
+                }
+            }
+        }
+    }
 }
 
 /**********************
@@ -1604,6 +1719,18 @@ struct ssd_info *process(struct ssd_info *ssd)
 #ifdef DEBUG
     printf("enter process,  current time:%lld\n",ssd->current_time);
 #endif
+
+    int64_t check_interval = 3600LL * 1000000000LL;
+    // int64_t check_interval = 100LL; 
+
+    if (ssd->current_time >= ssd->next_refresh_check_time) {
+        
+        // 執行檢查
+        check_and_perform_refresh(ssd);
+        
+        // 設定下一次檢查時間
+        ssd->next_refresh_check_time = ssd->current_time + check_interval;
+    }
 
     /*********************************************************
      *判断是否有读写子请求，如果有那么flag令为0，没有flag就为1

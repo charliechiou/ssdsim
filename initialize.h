@@ -212,6 +212,8 @@ struct ssd_info
     struct sub_request *subs_w_tail;
     struct event_node *event;          // 事件队列，每产生一个新的事件，按照时间顺序加到这个队列，在simulate函数最后，根据这个队列队首的时间，确定时间
     struct channel_info *channel_head; // 指向channel结构体数组的首地址
+    
+    int64_t next_refresh_check_time;
 };
 
 struct channel_info

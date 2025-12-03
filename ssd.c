@@ -16,9 +16,10 @@ Chao Ren        2011/07/01        2.0           Change               529517386@q
 Hao Luo         2011/01/01        2.0           Change               luohao135680@gmail.com
  *****************************************************************************************************************************/
 
-
-
 #include "ssd.h"
+
+#define ONE_SEC_NS 1000000000LL
+#define THREE_YEARS_NS (3LL * 365 * 24 * 3600 * ONE_SEC_NS)
 
 /********************************************************************************************************************************
   1，main函数中initiatio()函数用来初始化ssd,；2，make_aged()函数使SSD成为aged，aged的ssd相当于使用过一段时间的ssd，里面有失效页，
@@ -1134,6 +1135,24 @@ struct ssd_info *make_aged(struct ssd_info *ssd)
                         flag=0;
                         for (m=0;m<ssd->parameter->block_plane;m++)
                         {  
+                            struct blk_info *p_blk = &(ssd->channel_head[i].chip_head[j].die_head[k].plane_head[l].blk_head[m]);
+                            
+                            // 1. 設定磨損度 (P/E Cycles)
+                            // 根據論文，3-Year Stage 對應較低磨損，3-Week Stage 對應高磨損
+                            // 這裡設為 5000 作為測試
+                            p_blk->erase_count = 5000; 
+
+                            // 2. 設定最後寫入時間 (Time Travel)
+                            // 我們將時間設定為 "3年減去1小時" 之前
+                            // 這樣只要 Trace 跑超過 1 小時 (模擬時間)，就會觸發 Refresh
+                            int64_t buffer_time = 3600LL * ONE_SEC_NS; 
+                            p_blk->last_write_time = ssd->current_time - (THREE_YEARS_NS - buffer_time);
+                            
+                            // 3. 確保 Process Variation 參數存在 (防止 initialize 沒跑或是被覆蓋)
+                            if (p_blk->wearing_degree == 0) {
+                                p_blk->wearing_degree = 1.0; 
+                            }
+
                             if (flag>=threshould)
                             {
                                 break;
